@@ -413,6 +413,61 @@ auto levelInfos = orderBook.GetOrderBookLevelInfos();
 4. **Background Processing**: Dedicated thread for time-based operations
 5. **RAII Resource Management**: Automatic cleanup with smart pointers and scoped locks
 
+## Testing
+
+The project includes comprehensive unit and integration tests using Google Test framework with C++20 support.
+
+### Test Coverage
+
+- **Unit Tests**: Individual component testing (`test_order.cpp`, `test_orderbook.cpp`)
+- **Order Type Tests**: Specific order type behavior (`test_order_types.cpp`)
+- **Matching Tests**: Order matching logic (`test_matching.cpp`)
+
+### Test Categories
+
+#### Order Tests
+- Constructor validation and order state management
+- Partial and complete order fills
+- Error handling for invalid operations
+
+#### OrderBook Tests
+- Order addition and cancellation
+- Order book state management
+- Non-existent order handling
+
+#### Matching Tests
+- Basic order matching at same price
+- Partial order matching with remaining quantities
+- Price-time priority validation
+
+#### Order Type Tests
+- **GoodTillCancel**: Standard limit order behavior
+- **FillAndKill**: Immediate execution or rejection
+- **Market**: Best available price execution
+- **GoodForDay**: Time-based expiration at 4:00 PM
+- **FillOrKill**: Complete fill requirement validation
+
+
+### Running Tests
+
+```bash
+# Build tests
+cmake --build . --target orderbook_tests
+
+# Run all tests
+./tests/orderbook_tests
+
+# Run specific test
+./tests/orderbook_tests --gtest_filter=OrderTest.Constructor
+```
+
+### Test Framework
+
+- **Google Test**: Primary testing framework
+- **C++20**: Modern C++ features for enhanced testing capabilities
+- **CMake Integration**: Automated test discovery and execution
+- **Performance Benchmarks**: Timing-based performance validation
+
 ## Future Enhancements
 
 - **Order Book Snapshots**: Efficient state serialization
