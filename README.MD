@@ -12,6 +12,62 @@ A high-performance, thread-safe order book implementation in C++ designed for el
 
 ## 🏗️ Architecture Overview
 
+### System Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        Client[Client Application]
+    end
+    
+    subgraph "OrderBook Core"
+        OB[OrderBook]
+        subgraph "Data Structures"
+            OrdersMap[orders_<br/>unordered_map<OrderId, OrderEntry>]
+            BidsMap[bids_<br/>map<Price, OrderPointers>]
+            AsksMap[asks_<br/>map<Price, OrderPointers>]
+            LevelData[data_<br/>unordered_map<Price, LevelData>]
+        end
+        
+        subgraph "Threading"
+            MainThread[Main Thread]
+            PruneThread[Prune Thread<br/>GoodForDay Cleanup]
+            Mutex[ordersMutex_]
+            CV[shutDownConditionVariable_]
+        end
+    end
+    
+    subgraph "Order Types"
+        GTC[GoodTillCancel]
+        FAK[FillAndKill]
+        MKT[Market]
+        GFD[GoodForDay]
+        FOK[FillOrKill]
+    end
+    
+    subgraph "Output"
+        Trades[Trades]
+        LevelInfos[OrderBookLevelInfos]
+    end
+    
+    Client --> OB
+    OB --> OrdersMap
+    OB --> BidsMap
+    OB --> AsksMap
+    OB --> LevelData
+    OB --> MainThread
+    OB --> PruneThread
+    MainThread --> Mutex
+    PruneThread --> CV
+    GTC --> OB
+    FAK --> OB
+    MKT --> OB
+    GFD --> OB
+    FOK --> OB
+    OB --> Trades
+    OB --> LevelInfos
+```
+
 ### Core Components
 
 1. **OrderBook**: Main matching engine that manages order lifecycle
@@ -21,6 +77,34 @@ A high-performance, thread-safe order book implementation in C++ designed for el
 5. **LevelInfo**: Price level aggregation for market depth
 
 ## 📊 Data Structures
+
+### Data Structure Relationships
+
+```mermaid
+graph LR
+    subgraph "Order Storage"
+        OrderId[OrderId: 12345]
+        OrderEntry[OrderEntry<br/>order_: OrderPointer<br/>location_: iterator]
+        Order[Order Object<br/>price: 100.50<br/>quantity: 100<br/>side: Buy]
+    end
+    
+    subgraph "Price Level Storage"
+        PriceLevel[Price: 100.50]
+        OrderList[OrderPointers<br/>list<OrderPointer>]
+        Iterator[Iterator<br/>points to order]
+    end
+    
+    subgraph "Level Data"
+        LevelDataObj[LevelData<br/>quantity: 500<br/>count: 3]
+    end
+    
+    OrderId --> OrderEntry
+    OrderEntry --> Order
+    OrderEntry --> Iterator
+    PriceLevel --> OrderList
+    Iterator --> OrderList
+    PriceLevel --> LevelDataObj
+```
 
 ### Primary Data Structures
 
@@ -61,7 +145,55 @@ unordered_map<Price, LevelData> data_;
 
 ## 🔄 Core Logic
 
+### Order Processing Flow
+
+```mermaid
+flowchart TD
+    Start([New Order]) --> CheckType{Order Type?}
+    
+    CheckType -->|Market| MarketProcess[Convert to GoodTillCancel<br/>Set best available price]
+    CheckType -->|FillAndKill| FAKCheck{Can Match?}
+    CheckType -->|FillOrKill| FOKCheck{Can Fully Fill?}
+    CheckType -->|GoodTillCancel| AddToBook[Add to Order Book]
+    CheckType -->|GoodForDay| AddToBook
+    
+    MarketProcess --> AddToBook
+    FAKCheck -->|Yes| AddToBook
+    FAKCheck -->|No| Reject[Reject Order]
+    FOKCheck -->|Yes| AddToBook
+    FOKCheck -->|No| Reject
+    
+    AddToBook --> MatchOrders[Match Orders]
+    MatchOrders --> CreateTrades[Create Trades]
+    CreateTrades --> End([Return Trades])
+    Reject --> End
+```
+
 ### Order Matching Algorithm
+
+```mermaid
+flowchart TD
+    Start([Match Orders]) --> CheckEmpty{Both books empty?}
+    
+    CheckEmpty -->|Yes| End([No Matches])
+    CheckEmpty -->|No| GetBest[Get Best Bid & Ask]
+    
+    GetBest --> CheckPrice{Bid Price >= Ask Price?}
+    CheckPrice -->|No| End
+    CheckPrice -->|Yes| MatchLevel[Match at Price Level]
+    
+    MatchLevel --> CheckOrders{Orders at level?}
+    CheckOrders -->|No| RemoveLevel[Remove Empty Level]
+    CheckOrders -->|Yes| FillOrders[Fill Orders]
+    
+    FillOrders --> CreateTrade[Create Trade]
+    CreateTrade --> UpdateRemaining{Order Filled?}
+    UpdateRemaining -->|Yes| RemoveOrder[Remove Order]
+    UpdateRemaining -->|No| CheckOrders
+    
+    RemoveOrder --> CheckOrders
+    RemoveLevel --> CheckEmpty
+```
 
 1. **Price-Time Priority**: Orders are matched based on best price first, then by time
 2. **Continuous Matching**: The system continuously attempts to match orders after each addition
@@ -103,6 +235,45 @@ while (bids_.empty() == false && asks_.empty() == false) {
 - Background thread handles pruning
 
 ## 🔒 Concurrency Methods
+
+### Threading Architecture
+
+```mermaid
+graph TB
+    subgraph "Main Thread"
+        MainAPI[Public API Calls]
+        MainMutex[Acquire Mutex]
+        MainProcess[Process Orders]
+        MainRelease[Release Mutex]
+    end
+    
+    subgraph "Background Thread"
+        PruneCheck[Check Time]
+        PruneWait[Wait for Market Close]
+        PruneCancel[Cancel GoodForDay Orders]
+        PruneLoop[Loop]
+    end
+    
+    subgraph "Synchronization"
+        MutexLock[ordersMutex_]
+        CondVar[shutDownConditionVariable_]
+        AtomicFlag[shutDown_]
+    end
+    
+    MainAPI --> MainMutex
+    MainMutex --> MainProcess
+    MainProcess --> MainRelease
+    MainRelease --> MainAPI
+    
+    PruneCheck --> PruneWait
+    PruneWait --> CondVar
+    CondVar --> PruneCancel
+    PruneCancel --> PruneLoop
+    PruneLoop --> PruneCheck
+    
+    MainMutex --> MutexLock
+    PruneWait --> AtomicFlag
+```
 
 ### Thread Safety Implementation
 
@@ -149,6 +320,30 @@ void CancelOrders(OrderIds orderIds) {
 
 ## 🚀 Performance Characteristics
 
+### Performance Metrics
+
+```mermaid
+graph LR
+    subgraph "Time Complexity"
+        Add[Add Order<br/>O(log n)]
+        Cancel[Cancel Order<br/>O(1)]
+        Lookup[Order Lookup<br/>O(1)]
+        Match[Order Matching<br/>O(k)]
+    end
+    
+    subgraph "Space Complexity"
+        Storage[Order Storage<br/>O(n)]
+        Levels[Price Levels<br/>O(p)]
+        Data[Level Data<br/>O(p)]
+    end
+    
+    subgraph "Operations"
+        BestPrice[Best Price Access<br/>O(1)]
+        Iterator[Iterator Operations<br/>O(1)]
+        Batch[Batch Operations<br/>Optimized]
+    end
+```
+
 ### Time Complexities
 - **Order Addition**: O(log n) for price insertion + O(1) for matching
 - **Order Cancellation**: O(1) using stored iterators
@@ -161,7 +356,34 @@ void CancelOrders(OrderIds orderIds) {
 - **Price Levels**: O(p) where p is number of unique price levels
 - **Level Data**: O(p) for FillOrKill order tracking
 
-## 📄 API Reference
+## �� API Reference
+
+### API Flow Diagram
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant OrderBook
+    participant DataStructures
+    participant MatchingEngine
+    
+    Client->>OrderBook: AddOrder(order)
+    OrderBook->>OrderBook: Validate Order Type
+    OrderBook->>DataStructures: Store Order
+    OrderBook->>MatchingEngine: Match Orders
+    MatchingEngine->>DataStructures: Get Best Prices
+    MatchingEngine->>DataStructures: Update Orders
+    MatchingEngine->>OrderBook: Return Trades
+    OrderBook->>Client: Return Trades
+    
+    Client->>OrderBook: CancelOrder(orderId)
+    OrderBook->>DataStructures: Remove Order
+    OrderBook->>Client: Order Cancelled
+    
+    Client->>OrderBook: GetOrderBookLevelInfos()
+    OrderBook->>DataStructures: Aggregate Levels
+    OrderBook->>Client: Return Level Infos
+```
 
 ### Core Methods
 
