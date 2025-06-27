@@ -2,7 +2,7 @@
 
 A high-performance, thread-safe order book implementation in C++ designed for electronic trading systems. This project implements a complete matching engine that can handle various order types with efficient data structures and concurrent processing.
 
-## 🎯 Core Features
+## Core Features
 
 - **Multiple Order Types**: Supports GoodTillCancel, FillAndKill, Market, GoodForDay, and FillOrKill orders
 - **Real-time Matching**: Continuous order matching with price-time priority
@@ -10,9 +10,9 @@ A high-performance, thread-safe order book implementation in C++ designed for el
 - **Automatic Cleanup**: Background thread for pruning GoodForDay orders at market close
 - **High Performance**: O(1) order lookup and efficient matching algorithms
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
-### System Architecture Diagram
+### System Architecture
 
 ```mermaid
 graph TB
@@ -76,7 +76,7 @@ graph TB
 4. **OrderModify**: Order modification functionality
 5. **LevelInfo**: Price level aggregation for market depth
 
-## 📊 Data Structures
+## Data Structures
 
 ### Data Structure Relationships
 
@@ -136,14 +136,14 @@ struct LevelData {
 unordered_map<Price, LevelData> data_;
 ```
 
-### Why These Choices?
+### Design Rationale
 
 - **`list<OrderPointer>`**: Provides stable iterators that don't invalidate during insertions/deletions
 - **`map` with custom comparators**: Maintains price-time priority automatically
 - **`unordered_map` for orders**: O(1) lookup by OrderId
 - **Iterator-based removal**: O(1) removal without searching
 
-## 🔄 Core Logic
+## Core Logic
 
 ### Order Processing Flow
 
@@ -195,13 +195,10 @@ flowchart TD
     RemoveLevel --> CheckEmpty
 ```
 
-1. **Price-Time Priority**: Orders are matched based on best price first, then by time
-2. **Continuous Matching**: The system continuously attempts to match orders after each addition
-3. **Partial Fills**: Orders can be partially filled and remain in the book
-4. **Order Type Handling**: Different order types have specific matching rules
+### Matching Logic Implementation
 
 ```cpp
-// Matching Logic Flow
+// Core matching loop
 while (bids_.empty() == false && asks_.empty() == false) {
     auto& [bidPrice, bids] = *bids_.begin();
     auto& [askPrice, asks] = *asks_.begin();
@@ -210,7 +207,24 @@ while (bids_.empty() == false && asks_.empty() == false) {
     
     // Match orders at this price level
     while (bids.size() > 0 && asks.size() > 0) {
+        auto bid = bids.front();
+        auto ask = asks.front();
+        
+        Quantity quantity = min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
+        
         // Fill orders and create trades
+        bid->Fill(quantity);
+        ask->Fill(quantity);
+        
+        // Remove filled orders
+        if (bid->IsFilled()) {
+            bids.pop_front();
+            orders_.erase(bid->GetOrderId());
+        }
+        if (ask->IsFilled()) {
+            asks.pop_front();
+            orders_.erase(ask->GetOrderId());
+        }
     }
 }
 ```
@@ -234,7 +248,7 @@ while (bids_.empty() == false && asks_.empty() == false) {
 - Automatically cancelled at market close (4:00 PM)
 - Background thread handles pruning
 
-## 🔒 Concurrency Methods
+## Concurrency Methods
 
 ### Threading Architecture
 
@@ -318,31 +332,7 @@ void CancelOrders(OrderIds orderIds) {
 - **Graceful Shutdown**: Atomic flags and condition variables for clean termination
 - **RAII Safety**: Automatic resource cleanup with scoped locks
 
-## 🚀 Performance Characteristics
-
-### Performance Metrics
-
-```mermaid
-graph LR
-    subgraph "Time Complexity"
-        Add[Add Order<br/>O(log n)]
-        Cancel[Cancel Order<br/>O(1)]
-        Lookup[Order Lookup<br/>O(1)]
-        Match[Order Matching<br/>O(k)]
-    end
-    
-    subgraph "Space Complexity"
-        Storage[Order Storage<br/>O(n)]
-        Levels[Price Levels<br/>O(p)]
-        Data[Level Data<br/>O(p)]
-    end
-    
-    subgraph "Operations"
-        BestPrice[Best Price Access<br/>O(1)]
-        Iterator[Iterator Operations<br/>O(1)]
-        Batch[Batch Operations<br/>Optimized]
-    end
-```
+## Performance Characteristics
 
 ### Time Complexities
 - **Order Addition**: O(log n) for price insertion + O(1) for matching
@@ -356,34 +346,7 @@ graph LR
 - **Price Levels**: O(p) where p is number of unique price levels
 - **Level Data**: O(p) for FillOrKill order tracking
 
-## �� API Reference
-
-### API Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant OrderBook
-    participant DataStructures
-    participant MatchingEngine
-    
-    Client->>OrderBook: AddOrder(order)
-    OrderBook->>OrderBook: Validate Order Type
-    OrderBook->>DataStructures: Store Order
-    OrderBook->>MatchingEngine: Match Orders
-    MatchingEngine->>DataStructures: Get Best Prices
-    MatchingEngine->>DataStructures: Update Orders
-    MatchingEngine->>OrderBook: Return Trades
-    OrderBook->>Client: Return Trades
-    
-    Client->>OrderBook: CancelOrder(orderId)
-    OrderBook->>DataStructures: Remove Order
-    OrderBook->>Client: Order Cancelled
-    
-    Client->>OrderBook: GetOrderBookLevelInfos()
-    OrderBook->>DataStructures: Aggregate Levels
-    OrderBook->>Client: Return Level Infos
-```
+## API Reference
 
 ### Core Methods
 
@@ -406,7 +369,7 @@ OrderBookLevelInfos GetOrderBookLevelInfos() const;
 4. **GoodForDay**: Valid until market close
 5. **FillOrKill**: Must be fully filled or cancelled
 
-## 🛠️ Usage Example
+## Usage Example
 
 ```cpp
 // Create order book
@@ -436,13 +399,13 @@ trades = orderBook.AddOrder(sellOrder);
 auto levelInfos = orderBook.GetOrderBookLevelInfos();
 ```
 
-## 📋 Build Requirements
+## Build Requirements
 
 - **C++17** or later (uses `std::format`, structured bindings)
 - **Standard Library**: `<map>`, `<unordered_map>`, `<list>`, `<thread>`, `<mutex>`
 - **Compiler**: GCC 8+, Clang 7+, or MSVC 2019+
 
-## 🎯 Key Design Decisions
+## Key Design Decisions
 
 1. **Iterator Stability**: Using `list` instead of `vector` for stable iterators
 2. **Price Sorting**: Custom comparators for automatic price-time priority
@@ -450,7 +413,7 @@ auto levelInfos = orderBook.GetOrderBookLevelInfos();
 4. **Background Processing**: Dedicated thread for time-based operations
 5. **RAII Resource Management**: Automatic cleanup with smart pointers and scoped locks
 
-## 🔍 Future Enhancements
+## Future Enhancements
 
 - **Order Book Snapshots**: Efficient state serialization
 - **Market Data Feeds**: Real-time price and volume updates
