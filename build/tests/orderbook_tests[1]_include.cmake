@@ -1,5 +1,0 @@
-if(EXISTS "/Users/parjanya/Projects/OrderBook/build/tests/orderbook_tests[1]_tests.cmake")
-  include("/Users/parjanya/Projects/OrderBook/build/tests/orderbook_tests[1]_tests.cmake")
-else()
-  add_test(orderbook_tests_NOT_BUILT orderbook_tests_NOT_BUILT)
-endif()

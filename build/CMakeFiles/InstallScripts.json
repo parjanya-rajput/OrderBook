@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/parjanya/Projects/OrderBook/build/cmake_install.cmake",
-		"/Users/parjanya/Projects/OrderBook/build/tests/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
